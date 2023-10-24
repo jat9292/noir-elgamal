@@ -21,7 +21,7 @@ pub fn get_base_point() -> Gaffine {
 }
 
 // This function converts a private key to a public key, which is a point on the Baby Jubjub curve
-// The private key is a Field element which should be sampled uniformly between 0 and l-1, where l is the order of the prime subgroup of Baby Jubjub, l=2736030358979909402780800718157159386076813972158567259200215660948447373041
+// The private key is a Field element which should be sampled uniformly between 0 and l-1, where l is the order of the big prime subgroup of Baby Jubjub, l=2736030358979909402780800718157159386076813972158567259200215660948447373041
 // Baby Jubjub parameters in affine representation are defined as in ERC-244
 pub fn priv_to_pub_key(private_key: Field) -> Gaffine
 {
@@ -30,9 +30,10 @@ pub fn priv_to_pub_key(private_key: Field) -> Gaffine
  bjj_affine.mul(private_key, base_pt)
 }
 
-// Exponential ElGamal Encryption on Baby Jubjub, the plaintext is restricted to u40 because the last step of decryption requires to solve the Discrete Logarithm Problem
-// same notations as in https://en.wikipedia.org/wiki/ElGamal_encryption 
-// Warning : the public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
+// Exponential ElGamal Encryption on Baby Jubjub, plaintext is restricted to u40 as the last step of decryption requires solving the Discrete Logarithm Problem.
+// The randomness parameter should be sampled uniformly between 0 and l-1 and never reused. l is the order of the big prime subgroup of Baby Jubjub.
+// Same notations as in https://en.wikipedia.org/wiki/ElGamal_encryption 
+// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
 pub fn exp_elgamal_encrypt(public_key: Gaffine, plaintext: u40, randomness: Field) -> (Gaffine,Gaffine)
 {
  let bjj_affine = get_affine_curve();
@@ -57,7 +58,7 @@ pub fn exp_elgamal_decrypt(private_key : Field, ciphertext: (Gaffine,Gaffine)) -
 
 // This matches circomlibjs
 // from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L97
-// Warning : the public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
+// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
 pub fn pack_point(public_key: Gaffine) -> [u8;32] {
   let bjj_affine = get_affine_curve();
   assert(bjj_affine.contains(public_key)); // checks the public key is valid
@@ -80,7 +81,7 @@ pub fn pack_point(public_key: Gaffine) -> [u8;32] {
 
 // This matches circomlibjs
 // from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L108
-// Warning : the packed_public_key array passed as an argument must correspond to a valid public key, i.e an element of the  Baby Jubjub curve
+// The packed_public_key array passed as an argument must correspond to a valid public key, i.e an element of the  Baby Jubjub curve
 pub fn unpack_point(mut public_key: [u8; 32]) -> Gaffine 
 {
   let mut point: Gaffine = Gaffine::new(0,0);
@@ -132,7 +133,7 @@ pub fn exp_elgamal_encrypt_packed(mut packed_public_key: [u8; 32], plaintext: u4
   let sign2 = (BigUint56::from_bytes(public_key.x.to_le_bytes(32))
       .gt(BigUint56::from_bytes(pm1d2.to_le_bytes(32))));
 
-  if(sign!=sign2) {
+  if(sign!=sign2) { // discrepancy compared to circomlibjs here probably due to the Montgomery modular form conversion in circomlibjs/ffwasm
      public_key.x = -public_key.x;
   } 
   let bjj_affine = get_affine_curve();
@@ -161,8 +162,8 @@ fn from_rpr_le(public_key: [u8;32]) -> Field {
 #[test]
 fn test_main() {
     let message: u40 = 943594123598;
-    let private_key: Field = 2291123624948246627368989940774052753470489062495018070576418670157516550852; // chosen randomly between 0 and l, the order of the prime subgroup of bjj
-    let randomness: Field = 410498812303264265898947717948728411574828655879831784037118824925397244429; // chosen randomly between 0 and l, the order of the prime subgroup of bjj
+    let private_key: Field = 0x04c330a81537c0d29cc09e8b2b9c43fc5fb5a9d244ab741fc88dff3d40dbd75c; // chosen randomly between 0 and l-1, l is the order of the big prime subgroup of bjj
+    let randomness: Field = 0x010fe5884a7852054a21e21e549520352f563f03d3f79e66a2d75fbd2a21d5cf; // chosen randomly between 0 and l-1, and never reused
 
     let mut public_key: Gaffine = priv_to_pub_key(private_key);
     let ciphertext: (Gaffine,Gaffine) = exp_elgamal_encrypt(public_key, message, randomness);
@@ -178,19 +179,19 @@ fn test_main() {
 
 #[test]
 fn test_pack_point(){
-  let private_key = 2291123624948246627368989940774052753470489062495018070576418670157516550852;
+  let private_key = 0x0510bae26a9b59ebad67a4324c944b1910a778e8481d7f08ddba6bcd2b94b2c4;
   let pub_key: Gaffine = priv_to_pub_key(private_key);
   let packed_pub_key = [0xdc, 0x9f, 0x9f, 0xdb, 0x74, 0x6d, 0x0f, 0x07, 0xb0, 0x04, 0xcc, 0x43, 0x16, 0xe3, 0x49, 0x5a, 0x58, 0x57, 0x0b, 0x90, 0x66, 0x14, 0x99, 0xf8, 0xa6, 0xa6, 0x69, 0x6f, 0xf4, 0x15, 0x6b, 0xaa];//generated via circomlibjs
   let computed_packed_key = pack_point(pub_key);
   assert(computed_packed_key == packed_pub_key);
 
-  let private_key2 = 1738143062869349530774161277267438032429985865461074036301785158041314559336;
+  let private_key2 = 0x03d7c10d654c601b60f2380551b4782896335c48f5d56662b1d0604dd22c8568;
   let pub_key2: Gaffine = priv_to_pub_key(private_key2);
   let packed_pub_key2 = [0x0c, 0x07, 0x99, 0x9c, 0x15, 0xd4, 0x06, 0xbc, 0x08, 0xd7, 0xf3, 0xf3, 0x1f, 0x62, 0xce, 0xdb, 0xc8, 0x9e, 0xbf, 0x3a, 0x53, 0xff, 0x4d, 0x3b, 0xf7, 0xe2, 0xd0, 0xdd, 0xa9, 0x31, 0x49, 0x04];//generated via circomlibjs
   let computed_packed_key2 = pack_point(pub_key2);
   assert(computed_packed_key2 == packed_pub_key2);
 
-  let private_key3 = 1419151567905980068034978534653302182055502024582880680950402756828741268466;
+  let private_key3 = 0x032336193e8d6ebf273828eb9d6600badbc7cd795c639dbe364307cd121473f2;
   let pub_key3: Gaffine = priv_to_pub_key(private_key3);
   let packed_pub_key3 = [0x29, 0x48, 0x3d, 0xe5, 0xe8, 0x1d, 0xe9, 0x89, 0x3b, 0x56, 0x58, 0xd6, 0x05, 0x01, 0xa4, 0x56, 0x19, 0x8f, 0xd4, 0xbb, 0x39, 0xe4, 0x91, 0x6c, 0x2e, 0x30, 0xf2, 0x42, 0x23, 0xdf, 0xf0, 0xa6];//generated via circomlibjs
   let computed_packed_key3 = pack_point(pub_key3);
@@ -214,7 +215,7 @@ fn test_unpack_point() {
 
 #[test]
 fn test_pack_unpack(){
-let private_key: Field = 196383954322680360577828551168351253384582625827285508038195147154523468362;
+let private_key: Field = 0x03ca37083ee59c49a8b50274245f93b40c0ebd71624b9f9ff34c83488b6ccb3d;
   let pub_key: Gaffine = priv_to_pub_key(private_key);
 
   let packed = pack_point(pub_key);
@@ -231,10 +232,11 @@ fn test_encrypt(){
   let base_pt = get_base_point();
   let embedded_x = bjj_affine.mul(x as Field, base_pt);
 
-  let private_key = 196383954322680360577828551168351253384582625827285508038195147154523468362;
+  let private_key = 0x04d73359c9166e49aafaf9a4852eaa4dceb2c26878196b10e9048004ff5cc20c;
   let pub_key: Gaffine = priv_to_pub_key(private_key);
 
-  let encrypted_point = exp_elgamal_encrypt(pub_key, x, 1);
+  let randomness = 0x03f90f366f9fd55bb1335eac3b11f2190f2ce9ff1769db241edaa7774136099b;
+  let encrypted_point = exp_elgamal_encrypt(pub_key, x, randomness);
   let decrypted_point = exp_elgamal_decrypt(private_key, encrypted_point);
 
   assert(decrypted_point.x == embedded_x.x);
@@ -243,7 +245,8 @@ fn test_encrypt(){
   let packed = pack_point(pub_key);
   let unpacked = unpack_point(packed);
 
-  let encrypted_with_unpacked = exp_elgamal_encrypt(unpacked, x, 1);
+  let randomness2 = 0x0210a43c3e46d9ca877d57b2ff67ea8fff900031c57c478c0c03c2d432b2e2a5;
+  let encrypted_with_unpacked = exp_elgamal_encrypt(unpacked, x, randomness2);
   let decrypted_with_unpacked = exp_elgamal_decrypt(private_key, encrypted_with_unpacked);
 
   assert(decrypted_with_unpacked.x == embedded_x.x);
@@ -257,13 +260,13 @@ fn test_encrypt_packed(){
   let base_pt = get_base_point();
   let embedded_x = bjj_affine.mul(x as Field, base_pt);
 
-  let private_key = 196383954322680360577828551168351253384582625827285508038195147154523468362;
+  let private_key = 0x03de9c86d98bf24ffaac6e38fb55c8c45f73a33bdd4b2d8c904f2c34971356c2;
   let pub_key: Gaffine = priv_to_pub_key(private_key);
 
   let packed = pack_point(pub_key);
 
-
-  let encrypted_with_packed = exp_elgamal_encrypt_packed(packed, x, 1);
+  let randomness = 0x030cffca80ca4344e54e436fc5a03ae8e884b8f3edcb780702599e1951e8aa62;
+  let encrypted_with_packed = exp_elgamal_encrypt_packed(packed, x, randomness);
   let decrypted_with_packed = exp_elgamal_decrypt(private_key, encrypted_with_packed);
 
   assert(decrypted_with_packed.x == embedded_x.x);
