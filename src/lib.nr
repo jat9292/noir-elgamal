@@ -11,6 +11,7 @@ global bjj_generator_x = 9952034415821957495782911797873844365055464302783058267
 global bjj_generator_y = 5472060717959818805561601436314318772137091100104008585924551046643952123905;
 global bjj_basept_x    = 5299619240641551281634865583518297030282874472190772894086521144482721001553;
 global bjj_basept_y    = 16950150798460657717958625567821834550301663161624707787222815936182638968203;
+global bjj_l = 2736030358979909402780800718157159386076813972158567259200215660948447373041; // order of the big prime subgroup of the curve = order of basept
 
 pub fn get_affine_curve() -> AffineCurve {
   AffineCurve::new(bjj_a, bjj_d, Gaffine::new(bjj_generator_x, bjj_generator_y))
@@ -20,48 +21,58 @@ pub fn get_base_point() -> Gaffine {
   Gaffine::new(bjj_basept_x, bjj_basept_y)
 }
 
-// This function converts a private key to a public key, which is a point on the Baby Jubjub curve
-// The private key is a Field element which should be sampled uniformly between 0 and l-1, where l is the order of the big prime subgroup of Baby Jubjub, l=2736030358979909402780800718157159386076813972158567259200215660948447373041
-// Baby Jubjub parameters in affine representation are defined as in ERC-244
+/// This function checks that a point is in the big prime subgroup of the Baby Jubjub curve. 
+/// It is used to check that a public key is valid.
+pub fn is_valid_subgroup(point: Gaffine) -> bool {
+  let bjj_affine = get_affine_curve();
+  let is_on_curve = bjj_affine.contains(point); // checks the point is on bjj
+  let is_in_big_prime_subgroup = bjj_affine.mul(bjj_l, point).is_zero(); // checks the point is in the big prime subgroup of bjj
+  is_on_curve & is_in_big_prime_subgroup
+}
+
+
+/// This function converts a private key to a public key, which is a point on the Baby Jubjub curve.
+/// The private key is a Field element which should be sampled uniformly between 0 and bjj_l-1, where bjj_l is the order of the big prime subgroup of Baby Jubjub.
+/// Baby Jubjub parameters in affine representation are defined as in ERC-244.
 pub fn priv_to_pub_key(private_key: Field) -> Gaffine
 {
- let bjj_affine = get_affine_curve();
- let base_pt = get_base_point();
- bjj_affine.mul(private_key, base_pt)
+  let bjj_affine = get_affine_curve();
+  let base_pt = get_base_point();
+  bjj_affine.mul(private_key, base_pt)
 }
 
-// Exponential ElGamal Encryption on Baby Jubjub, plaintext is restricted to u40 as the last step of decryption requires solving the Discrete Logarithm Problem.
-// The randomness parameter should be sampled uniformly between 0 and l-1 and never reused. l is the order of the big prime subgroup of Baby Jubjub.
-// Same notations as in https://en.wikipedia.org/wiki/ElGamal_encryption 
-// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
+/// Exponential ElGamal Encryption on Baby Jubjub, plaintext is restricted to u40 as the last step of decryption requires solving the Discrete Logarithm Problem.
+/// The randomness parameter should be sampled uniformly between 0 and bjj_l-1 and NEVER reused. bjj_l is the order of the big prime subgroup of Baby Jubjub.
+/// Same notations as in https://en.wikipedia.org/wiki/ElGamal_encryption 
+/// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
 pub fn exp_elgamal_encrypt(public_key: Gaffine, plaintext: u40, randomness: Field) -> (Gaffine,Gaffine)
 {
- let bjj_affine = get_affine_curve();
- assert(bjj_affine.contains(public_key)); // checks the public key is valid
- let base_pt = get_base_point();
- let C1: Gaffine = bjj_affine.mul(randomness, base_pt);
- let plain_embedded: Gaffine = bjj_affine.mul(plaintext as Field, base_pt);
- let shared_secret: Gaffine = bjj_affine.mul(randomness, public_key);
- let C2: Gaffine = bjj_affine.add(shared_secret, plain_embedded);
- (C1,C2)
+  assert(is_valid_subgroup(public_key)); // checks the public key is valid
+  let bjj_affine = get_affine_curve();
+  let base_pt = get_base_point();
+  let C1: Gaffine = bjj_affine.mul(randomness, base_pt);
+  let plain_embedded: Gaffine = bjj_affine.mul(plaintext as Field, base_pt);
+  let shared_secret: Gaffine = bjj_affine.mul(randomness, public_key);
+  let C2: Gaffine = bjj_affine.add(shared_secret, plain_embedded);
+  (C1,C2)
 }
 
-// Exponential ElGamal Decryption on Baby Jubjub, the returned point is an embedding of the plaintext on the curve,
-// so to fully decrypt it, use the Baby-Step Giant-Step implementations in Rust or in WASM which accompany this package
+/// Exponential ElGamal Decryption on Baby Jubjub, the returned point is an embedding of the plaintext on the curve,
+/// so to fully decrypt it, use the Baby-Step Giant-Step implementations in Rust or in JS/WASM which accompany this package
+/// Warning : ciphertext is supposed to be valid (i.e results from an encryption of a u40 with a valid Public Key via `exp_elgamal_encrypt`)
 pub fn exp_elgamal_decrypt(private_key : Field, ciphertext: (Gaffine,Gaffine)) -> Gaffine
 {
- let bjj_affine = get_affine_curve();
- let shared_secret = bjj_affine.mul(private_key,ciphertext.0);
- let plain_embedded = bjj_affine.subtract(ciphertext.1,shared_secret);
- plain_embedded // give this embedded plaintext as input to the Baby-Step Giant-Step algorithm to get back the original plaintext
+  let bjj_affine = get_affine_curve();
+  let shared_secret = bjj_affine.mul(private_key,ciphertext.0);
+  let plain_embedded = bjj_affine.subtract(ciphertext.1,shared_secret);
+  plain_embedded // give this embedded plaintext as input to the Baby-Step Giant-Step algorithm to get back the original plaintext
 }
 
-// This matches circomlibjs
-// from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L97
-// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
+/// This matches circomlibjs
+/// from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L97
+/// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
 pub fn pack_point(public_key: Gaffine) -> [u8;32] {
-  let bjj_affine = get_affine_curve();
-  assert(bjj_affine.contains(public_key)); // checks the public key is valid
+  assert(is_valid_subgroup(public_key), "The public key is not a point on the Baby Jubjub big subgroup"); // checks the public key is valid
 
   let mut array: [u8;32] = [0;32];
   let mut y = public_key.y.to_le_bytes(32);
@@ -79,18 +90,29 @@ pub fn pack_point(public_key: Gaffine) -> [u8;32] {
   array
 }
 
-// This matches circomlibjs
-// from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L108
-// The packed_public_key array passed as an argument must correspond to a valid public key, i.e an element of the  Baby Jubjub curve
-pub fn unpack_point(mut public_key: [u8; 32]) -> Gaffine 
+/// This matches circomlibjs
+/// from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L108
+/// The packed_public_key array passed as an argument must correspond to a valid public key, i.e an element of the  Baby Jubjub curve
+pub fn unpack_point(public_key: [u8; 32]) -> Gaffine 
 {
+  let mut y_array = public_key;
   let mut point: Gaffine = Gaffine::new(0,0);
   let mut sign = false;
-  if((public_key[31] & 0x80) != 0) {
+  if((y_array[31] & 0x80) != 0) {
     sign = true;
-    public_key[31] &= 0x7f;
+    y_array[31] &= 0x7f;
   }
-  point.y = from_rpr_le(public_key);
+
+  /// Checking the validity of the public key to ensure unicity
+  let mut y_slice: [u8] = [];
+  for i in 0..32 {
+    y_slice=y_slice.push_back(y_array[i]);
+  }
+  let yBigUint = BigUint56::from_bytes(y_slice);
+  let pBigUint = (BigUint56::from_bytes((-1).to_le_bytes(32)).add(BigUint56::from_bytes((1).to_le_bytes(32)))); // p in BigUint format (so it is non-null)
+  assert(yBigUint.lt(pBigUint), "The packed public key is invalid"); // Important check to get unicity of the packed public key, otherwise a malicious user could generate several packed keys for the same unpacked public key by adding a multiple of p to y
+
+  point.y = from_rpr_le(y_array);
 
   let mut y2 = point.y * point.y;
   let xa = 1-y2;
@@ -105,23 +127,34 @@ pub fn unpack_point(mut public_key: [u8; 32]) -> Gaffine
   if(sign!=sign2) {
      point.x = -point.x;
   } 
-  let bjj_affine = get_affine_curve();
-  assert(bjj_affine.contains(point)); // checks the public key is valid
-  point
+
+  assert(is_valid_subgroup(point), "The public key is not a point on the Baby Jubjub big subgroup"); // checks the public key is valid
+  point // the unpacked public key
 }
 
 
-// Same as exp_elgamal_encrypt but instead of an upacked public_key, takes directly the packed public key as an argument
-// Saves gates because the validity of the public key is checked only once instead of twice (1st when using unpack_point and 2nd in exp_elgamal_encrypt)
-pub fn exp_elgamal_encrypt_packed(mut packed_public_key: [u8; 32], plaintext: u40, randomness: Field) -> (Gaffine,Gaffine)
+/// Same as exp_elgamal_encrypt but instead of an upacked public_key, takes directly the packed public key as an argument
+/// Saves gates because the validity of the public key is checked only once instead of twice (1st when using unpack_point and 2nd in exp_elgamal_encrypt)
+pub fn exp_elgamal_encrypt_packed(packed_public_key: [u8; 32], plaintext: u40, randomness: Field) -> (Gaffine,Gaffine)
 {
+  let mut y_array = packed_public_key;
   let mut public_key: Gaffine = Gaffine::new(0,0);
   let mut sign = false;
-  if((packed_public_key[31] & 0x80) != 0) {
+  if((y_array[31] & 0x80) != 0) {
     sign = true;
-    packed_public_key[31] &= 0x7f;
+    y_array[31] &= 0x7f;
   }
-  public_key.y = from_rpr_le(packed_public_key);
+
+  /// Checking the validity of the public key to ensure unicity
+  let mut y_slice: [u8] = [];
+  for i in 0..32 {
+    y_slice=y_slice.push_back(y_array[i]);
+  }
+  let yBigUint = BigUint56::from_bytes(y_slice);
+  let pBigUint = (BigUint56::from_bytes((-1).to_le_bytes(32)).add(BigUint56::from_bytes((1).to_le_bytes(32)))); // p in BigUint format (so it is non-null)
+  assert(yBigUint.lt(pBigUint), "The packed public key is invalid"); // Important check to get unicity of the packed public key, otherwise a malicious user could generate several packed keys for the same unpacked public key by adding a multiple of p to y
+
+  public_key.y = from_rpr_le(y_array);
 
   let mut y2 = public_key.y * public_key.y;
   let xa = 1-y2;
@@ -136,19 +169,20 @@ pub fn exp_elgamal_encrypt_packed(mut packed_public_key: [u8; 32], plaintext: u4
   if(sign!=sign2) { // discrepancy compared to circomlibjs here probably due to the Montgomery modular form conversion in circomlibjs/ffwasm
      public_key.x = -public_key.x;
   } 
-  let bjj_affine = get_affine_curve();
-  assert(bjj_affine.contains(public_key)); // checks the public key is valid
 
- let base_pt = get_base_point();
- let C1: Gaffine = bjj_affine.mul(randomness, base_pt);
- let plain_embedded: Gaffine = bjj_affine.mul(plaintext as Field, base_pt);
- let shared_secret: Gaffine = bjj_affine.mul(randomness, public_key);
- let C2: Gaffine = bjj_affine.add(shared_secret, plain_embedded);
- (C1,C2)
+  assert(is_valid_subgroup(public_key), "The public key is not a point on the Baby Jubjub big subgroup"); // checks the public key is valid
+
+  let bjj_affine = get_affine_curve();
+  let base_pt = get_base_point();
+  let C1: Gaffine = bjj_affine.mul(randomness, base_pt);
+  let plain_embedded: Gaffine = bjj_affine.mul(plaintext as Field, base_pt);
+  let shared_secret: Gaffine = bjj_affine.mul(randomness, public_key);
+  let C2: Gaffine = bjj_affine.add(shared_secret, plain_embedded);
+  (C1,C2)
 }
 
-// translated from here: https://github.com/iden3/ffjavascript/blob/d1cd4ae32170aedd000865f0828b78a15df6f06f/src/scalar.js#L215
-// and inspired by this: https://gist.github.com/signorecello/dad41f8b90ae48c7355bfd1f34f8885b
+/// translated from here: https://github.com/iden3/ffjavascript/blob/d1cd4ae32170aedd000865f0828b78a15df6f06f/src/scalar.js#L215
+/// and inspired by this: https://gist.github.com/signorecello/dad41f8b90ae48c7355bfd1f34f8885b
 fn from_rpr_le(public_key: [u8;32]) -> Field {
   let mut y : Field = 0;
   let mut v : Field = 1;
@@ -161,20 +195,20 @@ fn from_rpr_le(public_key: [u8;32]) -> Field {
 
 #[test]
 fn test_main() {
-    let message: u40 = 943594123598;
-    let private_key: Field = 0x04c330a81537c0d29cc09e8b2b9c43fc5fb5a9d244ab741fc88dff3d40dbd75c; // chosen randomly between 0 and l-1, l is the order of the big prime subgroup of bjj
-    let randomness: Field = 0x010fe5884a7852054a21e21e549520352f563f03d3f79e66a2d75fbd2a21d5cf; // chosen randomly between 0 and l-1, and never reused
+  let message: u40 = 943594123598;
+  let private_key: Field = 0x04c330a81537c0d29cc09e8b2b9c43fc5fb5a9d244ab741fc88dff3d40dbd75c; // chosen randomly between 0 and bjj_l-1
+  let randomness: Field = 0x010fe5884a7852054a21e21e549520352f563f03d3f79e66a2d75fbd2a21d5cf; // chosen randomly between 0 and bjj_l-1, and never reused
 
-    let mut public_key: Gaffine = priv_to_pub_key(private_key);
-    let ciphertext: (Gaffine,Gaffine) = exp_elgamal_encrypt(public_key, message, randomness);
-    let decryption = exp_elgamal_decrypt(private_key, ciphertext); // in embedded form (before the baby-step giant-step application)
+  let public_key: Gaffine = priv_to_pub_key(private_key);
+  let ciphertext: (Gaffine,Gaffine) = exp_elgamal_encrypt(public_key, message, randomness);
+  let decryption = exp_elgamal_decrypt(private_key, ciphertext); // in embedded form (before the baby-step giant-step application)
 
-    let bjj_affine: AffineCurve = get_affine_curve();
-    let base_pt: Gaffine = get_base_point();
-    let plain_embedded: Gaffine = bjj_affine.mul(message as Field,base_pt);
+  let bjj_affine: AffineCurve = get_affine_curve();
+  let base_pt: Gaffine = get_base_point();
+  let plain_embedded: Gaffine = bjj_affine.mul(message as Field,base_pt);
 
-    assert(plain_embedded.x == decryption.x);
-    assert(plain_embedded.y == decryption.y);
+  assert(plain_embedded.x == decryption.x);
+  assert(plain_embedded.y == decryption.y);
 }
 
 #[test]
@@ -199,12 +233,10 @@ fn test_pack_point(){
 }
 
 #[test]
-fn test_unpack_point() {
-  let private_keys: [Field] = [0x01e5cc52b94418c1d361a3479870df1f46fc4b3e697153843505053dd8b092da,0x05f53084112e74844b82f7cffe0ca07230681243ec3c77d53a6f31f5b04f7c4a,0x035599da748c880852fa5a5cfa417971e6212a7dcc5c2556fd274a775f0ddba6,
-    0x04edd04fa218f3b0f32e109696a00baeb5f5b5bc6082b9dd53ff1ad1efe48f29,0x00edd199d52b82a65e7aaf6951f792462a84680022e139d8acf1c07d5168a827,0x01975e987782456b7e73a34835934b6a20c196f750bc7390c0f7d8303b469f7e,
-    0x0143217d5df8e46eeac3b349b52903c8683cf72dee634c2fc22c63f8c32eb403,0x0146f1e7c7f39156351b16672223dd452d97fa92e603ce54bef4ea070f6714e8,0x0392f188c95d6ba5d6cceece1c88222b81b7ebfe33ebfe6a41d77d9cc68e7365,
-    0x00f4a4b9474943d9d5642264055b4e20cccca5d72c9d51905083842a4c5b0634,0x056ff323dae95ce2e9d36cd98c478f408898361b9295440204c0269e85dd5857,0x0605286e2139a2b510c16127ee24fa8667ce749386c494e9e9c44107c26944dc,
-    0x0232f1e3b4eef17264422b75959d18f9c740bce6ee38e501889f5058d158dc07,0x00ad6cb4f089e263a412160b1232b4893f6c3c1380384d70d4059d84b9ce3d78,0x000e71e555fa42fa642612664863c9aa30f23648208064aa509bf4925b2db59c];
+fn test_pack_unpack_point() {
+  let private_keys: [Field] = [0x01e5cc52b94418c1d361a3479870df1f46fc4b3e697153843505053dd8b092da,0x05f53084112e74844b82f7cffe0ca07230681243ec3c77d53a6f31f5b04f7c4a,
+                              0x04edd04fa218f3b0f32e109696a00baeb5f5b5bc6082b9dd53ff1ad1efe48f29,0x00edd199d52b82a65e7aaf6951f792462a84680022e139d8acf1c07d5168a827,
+                              0x01975e987782456b7e73a34835934b6a20c196f750bc7390c0f7d8303b469f7e];
   for private_key in private_keys {
     let public_key: Gaffine = priv_to_pub_key(private_key);
     let packed_pub_key = pack_point(public_key);
@@ -213,16 +245,33 @@ fn test_unpack_point() {
     }
 }
 
-#[test]
-fn test_pack_unpack(){
-let private_key: Field = 0x03ca37083ee59c49a8b50274245f93b40c0ebd71624b9f9ff34c83488b6ccb3d;
-  let pub_key: Gaffine = priv_to_pub_key(private_key);
+#[test(should_fail_with = "The packed public key is invalid")]
+fn test_packed_key_unicity(){
+  let mut invalid_packed_public_key : [u8;32] = [0;32];
 
-  let packed = pack_point(pub_key);
-  let unpacked = unpack_point(packed);
+  let private_key = 0x04d73359c9166e49aafaf9a4852eaa4dceb2c26878196b10e9048004ff5cc20c;
+  let pub_key = priv_to_pub_key(private_key);
 
-  assert(unpacked.x==pub_key.x);
-  assert(unpacked.y==pub_key.y);
+  let valid_packed_public_key = pack_point(pub_key);
+  
+  /// Computing a different packed public key which should not be valid, by adding p to the y coordinate : 
+  let pBig = (BigUint56::from_bytes((-1).to_le_bytes(32)).add(BigUint56::from_bytes((1).to_le_bytes(32))));
+  let yPluspBig = BigUint56::from_bytes(pub_key.y.to_le_bytes(32)).add(pBig); // A user tries to cheat by generating an invalid packed public key by adding p to y
+  let y = yPluspBig.to_bytes();
+  for i in 0..32 {
+    invalid_packed_public_key[i] = y[i];
+  }
+  let pm1d2 = -1 / 2;
+  if(BigUint56::from_bytes(pub_key.x.to_le_bytes(32))
+      .gt(BigUint56::from_bytes(pm1d2.to_le_bytes(32))))
+  {
+    invalid_packed_public_key[31] = invalid_packed_public_key[31] | 0x80;
+  }
+  
+  assert(valid_packed_public_key!=invalid_packed_public_key); /// checks that the newly computed packed public key is different from the original one
+  assert((unpack_point(valid_packed_public_key).x==pub_key.x) & (unpack_point(valid_packed_public_key).y==pub_key.y)); // this should succeed
+  assert((unpack_point(invalid_packed_public_key).x==pub_key.x) & (unpack_point(invalid_packed_public_key).y==pub_key.y)); // this should fail with `The packed public key is invalid`
+
 }
 
 #[test]
