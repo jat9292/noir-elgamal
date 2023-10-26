@@ -124,7 +124,7 @@ pub fn unpack_point(public_key: [u8; 32]) -> Gaffine
   let sign2 = (BigUint56::from_bytes(point.x.to_le_bytes(32))
       .gt(BigUint56::from_bytes(pm1d2.to_le_bytes(32))));
 
-  if(sign!=sign2) {
+  if(sign!=sign2) {  // discrepancy compared to circomlibjs here probably due to the Montgomery modular form conversion in circomlibjs/ffwasm
      point.x = -point.x;
   } 
 
