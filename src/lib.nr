@@ -68,9 +68,9 @@ pub fn exp_elgamal_decrypt(private_key : Field, ciphertext: (Gaffine,Gaffine)) -
   plain_embedded // give this embedded plaintext as input to the Baby-Step Giant-Step algorithm to get back the original plaintext
 }
 
-/// This matches circomlibjs
-/// from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L97
-/// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve
+/// This function converts the orginal public key to its compressed form, i.e from a point on Baby Jubjub to a bytes32.
+/// This matches circomlibjs from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L97
+/// The public_key point passed as an argument must correspond to a valid public key, i.e an element of the Baby Jubjub curve.
 pub fn pack_point(public_key: Gaffine) -> [u8;32] {
   assert(is_valid_subgroup(public_key), "The public key is not a point on the Baby Jubjub big subgroup"); // checks the public key is valid
 
@@ -90,8 +90,8 @@ pub fn pack_point(public_key: Gaffine) -> [u8;32] {
   array
 }
 
-/// This matches circomlibjs
-/// from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L108
+/// This function converts back the compressed public key to its original form, i.e from a bytes32 to a point on Baby Jubjub
+/// This matches circomlibjs from here: https://github.com/iden3/circomlibjs/blob/4f094c5be05c1f0210924a3ab204d8fd8da69f49/src/babyjub.js#L108
 /// The packed_public_key array passed as an argument must correspond to a valid public key, i.e an element of the  Baby Jubjub curve
 pub fn unpack_point(public_key: [u8; 32]) -> Gaffine 
 {
