@@ -11,7 +11,7 @@ Alternatively, you could also use the even faster accompanying Rust crate [babyg
 In your `Nargo.toml` file, add the following dependency:
 ```
 [dependencies]
-noir_elgamal = { tag = "v0.2.0", git = "https://github.com/jat9292/noir-elgamal" }
+noir_elgamal = { tag = "v0.1.0", git = "https://github.com/jat9292/noir-elgamal" }
 ```
 
 ## Available Noir functions
