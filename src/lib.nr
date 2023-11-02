@@ -321,3 +321,65 @@ fn test_encrypt_packed(){
   assert(decrypted_with_packed.x == embedded_x.x);
   assert(decrypted_with_packed.y == embedded_x.y);
 }
+
+fn main(private_key: Field, 
+        randomness: Field, 
+        /* Balance_old_me_clear is the clear (i.e decrypted) balance of sender 
+        this is computed offchain by solving the DLP with babygiant algorithm, 
+        after calling bjj_exp_elgamal_decrypt with his private key */
+        balance_old_clear: u40,
+
+        // Public Inputs
+        packed_public_key: pub [Field;32], 
+        nonce: pub Field,
+        value: pub u40, 
+        relay_fee: pub u40,
+        balance_old_encrypted_1: pub Gaffine, 
+        balance_old_encrypted_2: pub Gaffine,
+        balance_new_encrypted_1: pub Gaffine, 
+        balance_new_encrypted_2: pub Gaffine)
+    { 
+    let bjj_affine = get_affine_curve();
+    let base_pt = get_base_point();
+    let embedded_balance_old_me_clear = bjj_affine.mul(balance_old_clear as Field, base_pt);
+    let decoded_value = exp_elgamal_decrypt(private_key, (balance_old_encrypted_1,balance_old_encrypted_2));
+    // check that unencrypted balance of withdrawer really corresponds to his encrypted balance
+    assert((decoded_value.x == embedded_balance_old_me_clear.x) & (decoded_value.y == embedded_balance_old_me_clear.y)); 
+    let mut packed_public_key_u8: [u8;32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]; // for some reason nargo 0.17 and 0.18 is not able to verify the circuit without this type conversion
+    for i in 0..32 {
+        packed_public_key_u8[i] = packed_public_key[i] as u8;
+    }
+    let public_key = unpack_point(packed_public_key_u8);
+    // we encrypt the minted value with the minter's public key
+    let new_balance_encrypted_computed = exp_elgamal_encrypt(public_key, balance_old_clear - value - relay_fee, randomness);
+    assert((new_balance_encrypted_computed.0.x == balance_new_encrypted_1.x) & 
+            (new_balance_encrypted_computed.0.y == balance_new_encrypted_1.y) & 
+            (new_balance_encrypted_computed.1.x == balance_new_encrypted_2.x) & 
+            (new_balance_encrypted_computed.1.y == balance_new_encrypted_2.y)); 
+
+    assert(nonce==nonce); // for clarity and to remove the unused variable warning
+}
+
+#[test]
+fn test_withdraw() {
+    // private values
+    let private_key: Field = 2291123624948246627368989940774052753470489062495018070576418670157516550852; // see debug notebook for an example on how to compute those
+    let randomness: Field = 0x5fa49918e16a3c3f4d42071a137c8a818964701c63604244ac2746b95e00df ; // see debug notebook for an example on how to compute those
+    let balance : u40 = 1000;
+
+    // // public values
+    let public_key: Gaffine = priv_to_pub_key(private_key);
+    let packed_public_key = pack_point(public_key);
+    let mut packed_public_key_Field: [Field;32] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    for i in 0..32 {
+        packed_public_key_Field[i] = packed_public_key[i] as Field;
+    }
+    let value: u40 = 100; // the message being encrypted, should be a u40
+    let relay_fee: u40 = 1; // the relay fee, should be a u40
+
+    let old_encrypted_amount = exp_elgamal_encrypt(public_key, balance, randomness);
+    let new_encrypted_amount = exp_elgamal_encrypt(public_key, balance - value - relay_fee, randomness);
+    let nonce = 2; // compute in Solidity, keccak(encryped amt) % p
+
+    main(private_key, randomness, balance, packed_public_key_Field,nonce, value,relay_fee,old_encrypted_amount.0,old_encrypted_amount.1,new_encrypted_amount.0,new_encrypted_amount.1);  
+}
