@@ -2,7 +2,6 @@ use dep::std::ec::tecurve::affine::Curve as AffineCurve;
 use dep::std::ec::tecurve::affine::Point as Gaffine;
 use dep::std::collections::vec::Vec;
 use dep::std;
-// use dep::biguint::BigUint56;
 use dep::std::ec;
 use dep::std::eddsa::lt_bytes32;
 
@@ -13,7 +12,7 @@ global bjj_generator_y = 5472060717959818805561601436314318772137091100104008585
 global bjj_basept_x    = 5299619240641551281634865583518297030282874472190772894086521144482721001553;
 global bjj_basept_y    = 16950150798460657717958625567821834550301663161624707787222815936182638968203;
 global bjj_l = 2736030358979909402780800718157159386076813972158567259200215660948447373041; // order of the big prime subgroup of the curve = order of basept
-global p = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+
 pub fn get_affine_curve() -> AffineCurve {
   AffineCurve::new(bjj_a, bjj_d, Gaffine::new(bjj_generator_x, bjj_generator_y))
 }
@@ -83,8 +82,6 @@ pub fn pack_point(public_key: Gaffine) -> [u8;32] {
 
   let pm1d2 = -1 / 2;
 
-  // if(BigUint56::from_bytes(public_key.x.to_le_bytes(32))
-  //     .gt(BigUint56::from_bytes(pm1d2.to_le_bytes(32))))
   if(lt_bytes32(pm1d2, public_key.x))
   {
     array[31] = array[31] | 0x80;
@@ -105,19 +102,13 @@ pub fn unpack_point(public_key: [u8; 32]) -> Gaffine
     y_array[31] &= 0x7f;
   }
 
-  /// Checking the validity of the public key to ensure unicity
-  // let mut y_slice: [u8] = [];
-  // for i in 0..32 {
-  //   y_slice=y_slice.push_back(y_array[i]);
-  // }
-
-  // let yBigUint = BigUint56::from_bytes(y_slice);
-  // let pBigUint = (BigUint56::from_bytes((-1).to_le_bytes(32)).add(BigUint56::from_bytes((1).to_le_bytes(32)))); // p in BigUint format (so it is non-null)
-  // assert(yBigUint.lt(pBigUint), "The packed public key is invalid"); // Important check to get unicity of the packed public key, otherwise a malicious user could generate several packed keys for the same unpacked public key by adding a multiple of p to y
-
   point.y = from_rpr_le(y_array);
-
-  assert(lt_bytes32(point.y, p-1), "The packed public key is invalid");
+  let recovered_y_slice = point.y.to_le_bytes(32); 
+  let mut recovered_y_array: [u8;32] = [0;32];
+  for i in 0..32 {
+     recovered_y_array[i]=recovered_y_slice[i];
+  }
+  assert(recovered_y_array==y_array,"The packed public key is invalid"); // Important check to get unicity of the packed public key, otherwise a malicious user could generate several packed keys for the same unpacked public key by adding a multiple of p to y
 
   let mut y2 = point.y * point.y;
   let xa = 1-y2;
@@ -126,8 +117,6 @@ pub fn unpack_point(public_key: [u8; 32]) -> Gaffine
   point.x = ec::sqrt(x2);
 
   let pm1d2 = -1 / 2;
-  // let sign2 = (BigUint56::from_bytes(point.x.to_le_bytes(32))
-  //     .gt(BigUint56::from_bytes(pm1d2.to_le_bytes(32))));
   let sign2 = lt_bytes32(pm1d2, point.x);
 
   if(sign!=sign2) {  // discrepancy compared to circomlibjs here probably due to the Montgomery modular form conversion in circomlibjs/ffwasm
@@ -151,17 +140,13 @@ pub fn exp_elgamal_encrypt_packed(packed_public_key: [u8; 32], plaintext: u40, r
     y_array[31] &= 0x7f;
   }
 
-  /// Checking the validity of the public key to ensure unicity
-  // let mut y_slice: [u8] = [];
-  // for i in 0..32 {
-  //   y_slice=y_slice.push_back(y_array[i]);
-  // }
-  // let yBigUint = BigUint56::from_bytes(y_slice);
-  // let pBigUint = (BigUint56::from_bytes((-1).to_le_bytes(32)).add(BigUint56::from_bytes((1).to_le_bytes(32)))); // p in BigUint format (so it is non-null)
-  // assert(yBigUint.lt(pBigUint), "The packed public key is invalid"); // Important check to get unicity of the packed public key, otherwise a malicious user could generate several packed keys for the same unpacked public key by adding a multiple of p to y
-
   public_key.y = from_rpr_le(y_array);
-  assert(lt_bytes32(public_key.y, p-1), "The packed public key is invalid");
+  let recovered_y_slice = public_key.y.to_le_bytes(32); 
+  let mut recovered_y_array: [u8;32] = [0;32];
+  for i in 0..32 {
+     recovered_y_array[i]=recovered_y_slice[i];
+  }
+  assert(recovered_y_array==y_array,"The packed public key is invalid"); // Important check to get unicity of the packed public key, otherwise a malicious user could generate several packed keys for the same unpacked public key by adding a multiple of p to y
 
   let mut y2 = public_key.y * public_key.y;
   let xa = 1-y2;
@@ -170,8 +155,7 @@ pub fn exp_elgamal_encrypt_packed(packed_public_key: [u8; 32], plaintext: u40, r
   public_key.x = ec::sqrt(x2);
 
   let pm1d2 = -1 / 2;
-  // let sign2 = (BigUint56::from_bytes(public_key.x.to_le_bytes(32))
-  //     .gt(BigUint56::from_bytes(pm1d2.to_le_bytes(32))));
+
   let sign2 = lt_bytes32(pm1d2, public_key.x);
 
   if(sign!=sign2) { // discrepancy compared to circomlibjs here probably due to the Montgomery modular form conversion in circomlibjs/ffwasm
@@ -253,8 +237,7 @@ fn test_pack_unpack_point() {
     }
 }
 
-// #[test(should_fail_with = "The packed public key is invalid")]
-#[test]
+#[test(should_fail_with = "The packed public key is invalid")]
 fn test_packed_key_unicity(){
   let mut invalid_packed_public_key : [u8;32] = [0;32];
 
@@ -263,25 +246,26 @@ fn test_packed_key_unicity(){
 
   let valid_packed_public_key = pack_point(pub_key);
   
-  /// Computing a different packed public key which should not be valid, by adding p to the y coordinate : 
+  /// Computing a different packed public key which should not be valid, by adding p to the y coordinate :
+  // Previosuly could be computed when we imported BigUint via : 
   // let pBig = (BigUint56::from_bytes((-1).to_le_bytes(32)).add(BigUint56::from_bytes((1).to_le_bytes(32))));
   // let yPluspBig = BigUint56::from_bytes(pub_key.y.to_le_bytes(32)).add(pBig); // A user tries to cheat by generating an invalid packed public key by adding p to y
-  let y = (pub_key.y + p).to_le_bytes(32);
+  // Now we hardcode the result in the test : (alternatively we can compute it in Typescript)
+  let y = [0xf3, 0xde, 0xb3, 0xbd, 0x36, 0x14, 0x67, 0x9c, 0x55, 0xba, 0x4c, 0xa2, 0x3f, 0xb0, 0xc6, 0x3b, 0x3d, 0xfd, 0xec, 0x4e, 0x10, 0x9d, 0x83, 0x84, 0x53, 0x92, 0xcc, 0x46, 0xc2, 0x30, 0x29, 0x4d];
 
   for i in 0..32 {
     invalid_packed_public_key[i] = y[i];
   }
   let pm1d2 = -1 / 2;
-  // if(BigUint56::from_bytes(pub_key.x.to_le_bytes(32))
-  //     .gt(BigUint56::from_bytes(pm1d2.to_le_bytes(32))))
+
   if(lt_bytes32(pm1d2, pub_key.x))
   {
     invalid_packed_public_key[31] = invalid_packed_public_key[31] | 0x80;
   }
   
-  // assert(valid_packed_public_key!=invalid_packed_public_key); /// checks that the newly computed packed public key is different from the original one
+  assert(valid_packed_public_key!=invalid_packed_public_key); /// checks that the newly computed packed public key is different from the original one
   assert((unpack_point(valid_packed_public_key).x==pub_key.x) & (unpack_point(valid_packed_public_key).y==pub_key.y)); // this should succeed
-  // assert((unpack_point(invalid_packed_public_key).x==pub_key.x) & (unpack_point(invalid_packed_public_key).y==pub_key.y)); // this should fail with `The packed public key is invalid`
+  assert((unpack_point(invalid_packed_public_key).x==pub_key.x) & (unpack_point(invalid_packed_public_key).y==pub_key.y)); // this should fail with `The packed public key is invalid`
 
 }
 
