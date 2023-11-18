@@ -3,7 +3,6 @@ use dep::std::ec::tecurve::affine::Point as Gaffine;
 use dep::std::collections::vec::Vec;
 use dep::std;
 use dep::std::ec;
-use dep::std::eddsa::lt_bytes32;
 
 global bjj_a = 168700;
 global bjj_d = 168696;
@@ -19,6 +18,26 @@ pub fn get_affine_curve() -> AffineCurve {
 
 pub fn get_base_point() -> Gaffine {
   Gaffine::new(bjj_basept_x, bjj_basept_y)
+}
+
+// Returns true if x is less than y
+fn lt_bytes32(x: Field, y: Field) -> bool {
+    let x_bytes = x.to_le_bytes(32);
+    let y_bytes = y.to_le_bytes(32);
+    let mut x_is_lt = false;
+    let mut done = false;
+    for i in 0..32 {
+        if (!done) {
+            let x_byte = x_bytes[31 - i] as u8;
+            let y_byte = y_bytes[31 - i] as u8;
+            let bytes_match = x_byte == y_byte;
+            if !bytes_match {
+                x_is_lt = x_byte < y_byte;
+                done = true;
+            }
+        }
+    }
+    x_is_lt
 }
 
 /// This function checks that a point is in the big prime subgroup of the Baby Jubjub curve. 
