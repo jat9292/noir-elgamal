@@ -3,7 +3,6 @@ use dep::std::ec::tecurve::affine::Point as Gaffine;
 use dep::std::collections::vec::Vec;
 use dep::std;
 use dep::std::ec;
-use dep::std::eddsa::lt_bytes32;
 
 global bjj_a = 168700;
 global bjj_d = 168696;
