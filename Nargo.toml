@@ -4,4 +4,3 @@ type = "lib"
 authors = ["jat9292","critesjosh"]
 
 [dependencies]
-biguint = { path = "./biguint" }
